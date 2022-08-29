@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri May 13 13:48:35 2022
+
+@author: maedeh
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from dipole import dipole
+from scipy.constants import mu_0, pi
+from newfunction import *
+import random
+import statistics
+import pandas as pd
+import seaborn as sb
+from position_maker import pos
+
+
+
+inc = 50 #enter your increments in mm
+
+
+pos(inc) 
+
+positions = pd.read_csv("positions" + str(inc) + "mm increments.csv")     #reading positions from csv file
+
+x = np.array(positions.iloc[:,0]/1000)
+y = np.array(positions.iloc[:,1]/1000)
+z = np.array(positions.iloc[:,2]/1000)
+
+
+'''
+cell
+'''
+
+xroi, yroi, zroi = np.mgrid[-.3 : .3 : 100j, -.3 : .3 : 100j, -.3 : .3 : 100j]
+
+
+rcell = 0.18 # m, cell radius
+hcell = 0.15 # m, cell height
+dcell = 0.10 # m, bottom to top distance of cells
+
+
+mask = (abs(zroi) >= dcell/2) & (abs(zroi) <= dcell/2 + hcell) & (xroi ** 2 + yroi ** 2 < rcell ** 2)
+
+
+
+l1 = int(input('Enter your desire order:'))
+l2 = int(input('Enter your desire order to fit:'))
+
+
+Hx1, Hy1, Hz1 = CreateBListToOrder(l1)
+Hx2, Hy2, Hz2 = CreateBListToOrder(l2)
+
+'''
+Munich glm B fields
+'''
+MunicGlm = glmCreator(l1)
+
+k = x.size
+
+residual_Bx_total = []
+residual_By_total = []
+residual_Bz_total = []
+
+randomlistx = []
+randomlisty = []
+randomlistz = []
+
+randomlistBx = []
+randomlistBy = []
+randomlistBz = []
+
+stdevx = np.zeros((5,7))
+stdevy = np.zeros((5,7))
+stdevz = np.zeros((5,7))
+
+stdevB = np.zeros((5,7))
+
+stdevxx = []
+stdevyy = []
+stdevzz = []
+
+poserror = (0, 0.005, 0.01, 0.015, 0.02)
+Berror = (.1e-12, 0.5e-12, 1e-12, 5e-12, 10e-12, 50e-12, 100e-12) 
+
+u = (1,2,3,4,5)
+v = (1,2,3,4,5,6,7)
+a = 0 
+b = 0
+
+rangej = 1
+
+for countpe, pe in enumerate(poserror):
+    for countbe, Be in enumerate(Berror):
+        residual_Bx_total = [0]
+        residual_By_total = [0]
+        residual_Bz_total = [0]
+        residual_B_total = [0]
+
+        for j in range(rangej):
+            
+            randomlistx = np.array([random.uniform(-pe, pe) for i in range(k)])
+            Xwitherror = x + randomlistx
+            
+           
+            
+            randomlisty = np.array([random.uniform(-pe, pe) for i in range(k)])
+            Ywitherror = y + randomlisty
+            
+            randomlistz = np.array([random.uniform(-pe, pe) for i in range(k)])
+            Zwitherror = z + randomlistz
+            
+            BX = Bx(Hx1, x, y, z, MunicGlm)
+            randomlistBx = np.array([np.random.normal(loc = 0.0, scale = Be, size = None) for i in range(k)])
+            BXX = BX + randomlistBx
+            
+        
+            
+            BY = By(Hy1, x, y, z, MunicGlm)
+            randomlistBy = np.array([np.random.normal(loc = 0.0, scale = Be, size = None) for i in range(k)])
+            BYY = BY + randomlistBy
+            
+            BZ = Bz(Hz1, x, y, z, MunicGlm)
+            randomlistBz = np.array([np.random.normal(loc = 0.0, scale = Be, size = None) for i in range(k)])
+            BZZ = BZ + randomlistBz
+            
+            
+            Mfitresult = glm_fit(Hx2, Hy2, Hz2, l2, Xwitherror, Ywitherror, Zwitherror, BXX, BYY, BZZ)
+            # Mresiduals = Mfitresult[1]
+            newglm = Mfitresult[0]
+            
+            # print(newglm)
+            
+            
+            #now lets cacluate the Bx , By, Bz over the xroi, yroi, zroi
+            
+            Bxroi = Bx(Hx2, xroi[mask], yroi[mask], zroi[mask], MunicGlm)
+            Byroi = Bx(Hy2, xroi[mask], yroi[mask], zroi[mask], MunicGlm)
+            Bzroi = Bx(Hz2, xroi[mask], yroi[mask], zroi[mask], MunicGlm)
+            Broi = np.sqrt(Bxroi ** 2 + Byroi ** 2 + Bzroi ** 2)
+            
+            
+            #now lets cacluate the Bx , By, Bz over the xroi, yroi, zroi with the new glms
+            
+            Bxroi_err = Bx(Hx2, xroi[mask], yroi[mask], zroi[mask], newglm)
+            Byroi_err = By(Hy2, xroi[mask], yroi[mask], zroi[mask], newglm)
+            Bzroi_err = Bz(Hz2, xroi[mask], yroi[mask], zroi[mask], newglm)
+            Broi_err = np.sqrt(Bxroi_err ** 2 + Byroi_err ** 2 + Bzroi_err ** 2) 
+            
+            
+            #now we calculate the difference (residual over the ROI)
+            
+            residual_Bx = np.squeeze([Bxroi - Bxroi_err])
+            residual_By = np.squeeze([Byroi - Byroi_err])
+            residual_Bz = np.squeeze([Bzroi - Bzroi_err])
+            
+            residual_B = np.squeeze([Broi - Broi_err])
+         
+            
+            residual_Bx_total.extend(residual_Bx)
+            residual_By_total.extend(residual_By)
+            residual_Bz_total.extend(residual_Bz)
+            
+            residual_B_total.extend(residual_B)
+        
+        stdevx[countpe][countbe] = (statistics.stdev(residual_Bx_total))*(10e12)
+        stdevy[countpe][countbe] = (statistics.stdev(residual_By_total))*(10e12)
+        stdevz[countpe][countbe] = (statistics.stdev(residual_Bz_total))*(10e12)
+        stdevB[countpe][countbe] = (statistics.stdev(residual_B_total))*(10e12)
+        
+        
+nBerror = (.1, 0.5, 1, 5, 10, 50, 100)
+
+
+# Bx heatmap
+
+dfx = pd.DataFrame(data = stdevx, index = [*poserror], columns = [*nBerror])
+dfx = dfx.rename_axis("position error (m)", axis = "index")
+dfx = dfx.rename_axis("B error (pT)", axis = "columns")
+
+
+fig, ax = plt.subplots()
+sb.heatmap(dfx, annot = True, cmap = 'plasma', fmt = ".2f", cbar_kws = {'label': 'Std. Dev. of Residuals in Bx (pT)'})
+ax.invert_yaxis() 
+
+plt.savefig("NewFunction_pebe_" + str(rangej) +"_"+ str(inc) + "mm - Bx_cell.png", bbox_inches = 'tight', dpi = 320)
+
+
+# By haetmap
+
+dfy = pd.DataFrame(data = stdevy, index = [*poserror], columns = [*nBerror])
+dfy = dfy.rename_axis("position error (m)", axis = "index")
+dfy = dfy.rename_axis("B error (pT)", axis = "columns")  
+
+fig2, ax2 = plt.subplots()
+sb.heatmap(dfy, annot =True, cmap = 'plasma', fmt = ".2f", cbar_kws = {'label': 'Std. Dev. of Residuals in By (pT)'})
+ax2.invert_yaxis() 
+
+plt.savefig("NewFunction_pebe_" + str(rangej) +"_"+ str(inc) + "mm - By_cell.png", bbox_inches = 'tight', dpi = 320)
+
+
+# Bz haetmap
+
+dfz = pd.DataFrame(data = stdevz, index = [*poserror], columns = [*nBerror])
+dfz = dfz.rename_axis("position error (m)", axis = "index")
+dfz = dfz.rename_axis("B error (pT)", axis = "columns")  
+
+fig3, ax3 = plt.subplots()
+sb.heatmap(dfz, annot = True, cmap = 'plasma',fmt = ".2f", cbar_kws = {'label': 'Std. Dev. of Residuals in Bz (pT)'})
+ax3.invert_yaxis() 
+
+plt.savefig("NewFunction_pebe_" + str(rangej) +"_"+ str(inc) + "mm - Bz_cell.png",bbox_inches='tight', dpi=320)
+
+
+# B tot heatmap
+
+dfB = pd.DataFrame(data = stdevB, index = [*poserror], columns = [*nBerror])
+dfB = dfB.rename_axis("position error (m)", axis = "index")
+dfB = dfB.rename_axis("B error (pT)", axis = "columns")  
+
+fig1, ax1 = plt.subplots()
+sb.heatmap(dfB, annot = True, cmap = 'plasma', fmt = ".2f", cbar_kws = {'label': 'Std. Dev. of Residuals in B (pT)'})
+ax1.invert_yaxis() 
+
+plt.savefig("NewFunction_pebe_" + str(rangej) +"_"+ str(inc) + "mm - Btot_cell.png",bbox_inches = 'tight', dpi = 320)
+
+
+# Histogram 
+
+fig4, ax4 = plt.subplots()
+
+n, bins, patches = ax4.hist(BZ, color = 'purple')
+ax4.set_title(r'Histogram $B_{z}$ over the cell & door holes')
+ax4.set_xlabel('$\Delta B_z$ (T)')
+ax4.set_ylabel('# of entries')
+ax4.tick_params(axis='both')
+fig4.savefig(r'NEW Histogram $B_{z}$ over the cell & door holes.png', dpi=320)
+
+plt.show()
+
+# Bz vs. z
+
+fig5, ax5 = plt.subplots()
+
+ax5.plot(z, BZ, 'r.', label='$B_z$')
+# ax1.plot(zroi[mask], BzM_new - BzM_fit, '.', label='differences $B_z$')
+# ax1.plot(zroi[mask], BzM_fit, 'b.', label='fit $B_z$')
+ax5.set_xlabel(r'z (m)')
+ax5.set_ylabel(r'$B_z (T)$')
+ax5.set_title(r'$B_z$ fields (Munich $G_{lm}$) & increments = ' + str(inc) +
+              'mm over the cell', y = 1.04, fontsize = 10)
+ax5.legend()
+fig5.savefig(r'Hole pos $B_z$ fields Munich glm & increments = ' 
+             + str(inc) + 'mm.png', dpi=320)
+
+
+
+# fig1 = plt.figure()
+
+# ax1 = fig1.add_subplot(111)
+# n, bins, patches = ax1.hist(residual_Bx_total, bins = 500, color = 'navy')
+# ax1.set_title('1')
+# ax1.set_xlabel('residual Bx (pT)')
+# ax1.set_ylabel('# of entries')
+
+# plt.savefig("randx1WE.png",bbox_inches='tight', dpi=320)
+
+
+# fig2 = plt.figure()
+
+# ax2 = fig2.add_subplot(111)
+# n, bins, patches = ax2.hist(residual_By_total, bins = 500, color = 'green')
+# ax2.set_title('1')
+# ax2.set_xlabel('residual By (pT)')
+# ax2.set_ylabel('# of entries')
+
+# plt.savefig("randy1WE.png",bbox_inches='tight', dpi=320)
+
+
+# fig3 = plt.figure()
+
+# ax3 = fig3.add_subplot(111)
+# n, bins, patches = ax3.hist(residual_Bz_total, bins = 500, color = 'orange')
+# ax3.set_title('1')
+# ax3.set_xlabel('residual Bz (pT)')
+# ax3.set_ylabel('# of entries')
+
+# plt.savefig("randz1WE.png",bbox_inches='tight', dpi=320)
+
+
+# fig4 = plt.figure()
+
+# ax4 = fig4.add_subplot(111)
+# n, bins, patches = ax4.hist(residual_B_total, bins = 500, color = 'purple')
+# ax4.set_title('1')
+# ax4.set_xlabel('residual B (pT)')
+# ax4.set_ylabel('# of entries')
+
+# plt.savefig("rand1WE.png",bbox_inches='tight', dpi=320)
+
+
+
+

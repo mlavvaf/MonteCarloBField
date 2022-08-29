@@ -5,7 +5,7 @@ Main code: Heatmap_function_ver01
 
 Other codes must be downloaded
 
-** Purpose: 
+** Purpose **: 
 - Using spherical harmonic (based on Abel paper) to generate a magnetic field inside the MSR
 - Using Munich MSR glms
 - Perturb either Fields or positions
